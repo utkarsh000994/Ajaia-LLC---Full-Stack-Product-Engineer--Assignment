@@ -1,7 +1,7 @@
 # DocFlow
 
 ## Overview
-DocFlow is a lightweight collaborative document editor designed for a focused assessment slice: create documents, edit rich text, persist content, import .txt and .md files, and share documents with controlled viewer/editor permissions. Authentication is intentionally simplified for the assessment using seeded demo accounts rather than full OAuth or password management.
+DocFlow is a lightweight collaborative document editor designed for focused, productive writing. Create documents, edit rich text, persist content, import files, share with controlled permissions, and turn long documents into clear takeaways with AI-powered summarization. Authentication is intentionally simplified for the assessment using seeded demo accounts rather than full OAuth or password management.
 
 ## Features
 - Document creation and listing
@@ -9,7 +9,7 @@ DocFlow is a lightweight collaborative document editor designed for a focused as
 - Debounced autosave with save state feedback
 - Document rename in the editor header
 - .txt and .md import with validation and sanitization
-- AI document summaries with Gemini bullet points
+- AI-powered document intelligence with Gemini summaries
 - Sharing with editor/viewer permissions
 - Owner-controlled access revocation
 - SQLite-backed persistence via Prisma
@@ -47,7 +47,19 @@ Browser -> React UI -> REST API -> Express services -> Prisma -> SQLite
 Each document operation is validated and authorized on the server before persistence or modification. Rich-text content is stored as structured JSON encoded as a string in SQLite to preserve document structure while remaining compatible with SQLite.
 
 ## AI Summarization
-When a document is open, **Summarize with AI** sends its text to the protected backend summary endpoint and displays a short list of key points in a popup. Gemini is used as the AI provider, while the API key remains in the server-side `.env` file and is never exposed to the browser. The endpoint reuses the document access rules, so only users who can view the document can request a summary.
+### Turn Long Documents Into Clear Takeaways
+
+DocFlow puts an intelligent reading assistant directly inside the document editor. Open any document and click **Summarize with AI** to transform its content into a concise, easy-to-scan set of key bullet points. It is designed to help users quickly understand the purpose, decisions, and most important ideas in a document without reading every paragraph first.
+
+The workflow is simple and focused:
+
+1. Open a document you can access.
+2. Click **Summarize with AI**.
+3. DocFlow sends the document text to the protected backend summary endpoint.
+4. Gemini analyzes the content and returns a concise bullet-point summary.
+5. The summary appears instantly in a clean popup while the original document remains unchanged.
+
+This feature is built with privacy and access control in mind. The Gemini API key stays on the server in `.env` and is never exposed to the browser. The summary endpoint reuses DocFlow's document permissions, so only authenticated users who can view a document may request its summary. AI summarization is an assistive reading tool; the original document is never overwritten.
 
 ## Local Setup
 1. Install dependencies:

@@ -26,11 +26,16 @@
 - Support revoke access and viewer/editor distinction.
 
 ## Phase 6: File import and validation
-- Add `.txt` and `.md` upload flow with validation and size limits.
+- Add `.txt`, `.md`, and `.docx` upload flow with validation and size limits.
 - Convert imported content into editor-compatible rich-text content.
 - Reject unsupported formats with clear UI feedback.
 
-## Phase 7: Tests, QA, and docs
+## Phase 7: AI assistance
+- Add a protected Gemini summarization endpoint for accessible documents.
+- Display concise bullet-point summaries without modifying the original document.
+- Keep provider credentials server-side and document the AI workflow.
+
+## Phase 8: Tests, QA, and docs
 - Add business-logic tests for authorization, viewer restrictions, and persistence.
 - Build production bundle and confirm the app works end-to-end.
 - Write README, architecture, workflow, and submission documentation.

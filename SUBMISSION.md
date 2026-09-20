@@ -27,22 +27,25 @@ reviewer@example.com
 - Document creation
 - Document editing
 - Rich text
+- Manual save and debounced autosave
 - Rename
 - Persistence
-- File import
+- .txt, .md, and .docx file import
 - Sharing
 - Viewer/editor permissions
+- AI-powered Gemini document summaries
 - Automated tests
 - Error handling
 
 ## Supported File Types
 - .txt
 - .md
+- .docx
 
 ## Known Limitations
 - Authentication is intentionally simplified for the assessment.
 - Real-time collaboration is not implemented.
-- DOCX import is not included.
+- AI summaries depend on a configured Gemini API key.
 
 ## What I Would Build Next
 - production auth and role management
