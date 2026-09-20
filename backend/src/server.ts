@@ -3,6 +3,7 @@ import express from 'express';
 import session from 'express-session';
 import cors from 'cors';
 import multer from 'multer';
+import mammoth from 'mammoth';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { requireAuth, getCurrentUserId } from './lib/auth.js';
@@ -62,6 +63,35 @@ const shareSchema = z.object({
   permission: z.enum(['viewer', 'editor']),
 });
 
+const extractDocumentText = (node: any): string => {
+  if (!node) return '';
+  if (node.type === 'text') return node.text ?? '';
+  if (Array.isArray(node.content)) {
+    const text = node.content.map(extractDocumentText).join(node.type === 'paragraph' ? '\n' : '');
+    return node.type === 'listItem' ? `- ${text.trim()}\n` : text;
+  }
+  return '';
+};
+
+const parseSummaryBullets = (value: string): string[] => {
+  const cleaned = value.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    const bullets = Array.isArray(parsed) ? parsed : parsed.bullets;
+    if (Array.isArray(bullets)) {
+      return bullets.map((bullet) => String(bullet).trim()).filter(Boolean).slice(0, 8);
+    }
+  } catch {
+    // Fall back to line parsing if the provider returns plain text.
+  }
+
+  return cleaned
+    .split('\n')
+    .map((line) => line.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 8);
+};
+
 const getUserBySession = async (userId: string | null) => {
   if (!userId) return null;
   return prisma.user.findUnique({ where: { id: userId } });
@@ -96,9 +126,9 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ error: 'A valid email is required.' });
   }
 
-  const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  const user = await prisma.user.findUnique({ where: { email: parsed.data.email.trim().toLowerCase() } });
   if (!user) {
-    return res.status(401).json({ error: 'Unknown user.' });
+    return res.status(401).json({ error: 'Unknown user. Use utkarsh@example.com or reviewer@example.com, then run npm run seed if needed.' });
   }
 
   req.session.userId = user.id;
@@ -181,6 +211,62 @@ app.get('/api/documents/:id', requireAuth, async (req, res) => {
   }
 
   res.json(serializeDocument({ ...result.document, permission: result.permission }));
+});
+
+app.post('/api/documents/:id/summarize', requireAuth, async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Authentication required.' });
+
+  const access = await canAccessDocument(req.params.id, userId);
+  if (!access) {
+    return res.status(404).json({ error: 'Document not found or not accessible.' });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: 'AI summarization is not configured. Add GEMINI_API_KEY to .env.' });
+  }
+
+  const documentText = extractDocumentText(JSON.parse(access.document.content)).trim();
+  if (!documentText) {
+    return res.status(400).json({ error: 'Add some text to the document before summarizing it.' });
+  }
+
+  const provider = process.env.AI_PROVIDER ?? 'gemini';
+  const model = process.env.AI_MODEL ?? 'gemini-2.0-flash';
+  if (provider !== 'gemini') {
+    return res.status(501).json({ error: `AI provider "${provider}" is not supported yet.` });
+  }
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `Summarize the following document into 3 to 6 concise bullet points. Return only a valid JSON array of strings, with no markdown fences or extra text.\n\n${documentText.slice(0, 30000)}`,
+          }],
+        }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+      }),
+    });
+
+    const data = await response.json() as any;
+    if (!response.ok) {
+      return res.status(502).json({ error: data.error?.message ?? 'The AI provider could not generate a summary.' });
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? '';
+    const bullets = parseSummaryBullets(text);
+    if (bullets.length === 0) {
+      return res.status(502).json({ error: 'The AI provider returned an empty summary.' });
+    }
+
+    return res.json({ bullets });
+  } catch {
+    return res.status(502).json({ error: 'Unable to connect to the AI provider.' });
+  }
 });
 
 app.patch('/api/documents/:id', requireAuth, async (req, res) => {
@@ -354,22 +440,60 @@ app.post('/api/import', requireAuth, upload.single('file'), async (req, res) => 
   }
 
   const file = req.file;
-  const allowedMime = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream'];
+  const allowedMime = [
+    'text/plain',
+    'text/markdown',
+    'text/x-markdown',
+    'application/octet-stream',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/zip',
+  ];
   const ext = file.originalname.split('.').pop()?.toLowerCase();
-  const validExt = ['txt', 'md'];
+  const validExt = ['txt', 'md', 'docx'];
   if (!ext || !validExt.includes(ext) || (!allowedMime.includes(file.mimetype) && file.mimetype !== '')) {
-    return res.status(400).json({ error: 'Unsupported file type. Supported formats: .txt, .md' });
+    return res.status(400).json({ error: 'Unsupported file type. Supported formats: .txt, .md, .docx' });
   }
 
   if (file.size > 5 * 1024 * 1024) {
     return res.status(400).json({ error: 'File exceeds the 5 MB size limit.' });
   }
 
-  const text = Buffer.from(file.buffer).toString('utf-8');
-  const content = ext === 'md' ? markdownToProseMirror(text) : {
+  let text = '';
+  if (ext === 'docx') {
+    const result = await mammoth.extractRawText({ buffer: file.buffer });
+    text = result.value || '';
+  } else {
+    text = Buffer.from(file.buffer).toString('utf-8');
+  }
+
+  const normalizedText = text.replace(/\r\n/g, '\n').trim();
+  const content = ext === 'md' ? markdownToProseMirror(normalizedText || 'Imported document') : {
     type: 'doc',
-    content: [{ type: 'paragraph', content: [{ type: 'text', text: text.trim() || 'Imported document' }] }],
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: normalizedText || 'Imported document' }] }],
   };
+
+  const documentId = typeof req.body?.documentId === 'string' ? req.body.documentId : null;
+
+  if (documentId) {
+    const access = await canAccessDocument(documentId, userId);
+    if (!access) {
+      return res.status(404).json({ error: 'Document not found or not accessible.' });
+    }
+    if (access.permission === 'viewer') {
+      return res.status(403).json({ error: 'Viewer users cannot modify documents.' });
+    }
+
+    const updated = await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        title: (file.originalname.replace(/\.[^/.]+$/, '') || 'Imported document').slice(0, 120),
+        content: JSON.stringify(content),
+      },
+      include: { owner: true },
+    });
+
+    return res.status(200).json(serializeDocument(updated));
+  }
 
   const document = await prisma.document.create({
     data: {

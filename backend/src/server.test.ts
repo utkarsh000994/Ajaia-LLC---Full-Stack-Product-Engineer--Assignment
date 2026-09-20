@@ -38,6 +38,22 @@ describe('DocFlow API authorization', () => {
     expect(response.status).toBe(404);
   });
 
+  it('rejects summary requests for users without document access', async () => {
+    const document = await prisma.document.create({
+      data: {
+        title: 'Private summary',
+        content: JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'private' }] }] }),
+        ownerId,
+      },
+    });
+
+    const agent = request.agent(app);
+    await agent.post('/api/login').send({ email: 'reviewer@test.com' });
+
+    const response = await agent.post(`/api/documents/${document.id}/summarize`);
+    expect(response.status).toBe(404);
+  });
+
   it('prevents viewer access from modifying a document', async () => {
     const document = await prisma.document.create({
       data: {
@@ -106,5 +122,31 @@ describe('DocFlow API authorization', () => {
     expect(first.status).toBe(201);
     expect(second.status).toBe(201);
     expect(count).toBe(1);
+  });
+
+  it('imports content into an existing draft document', async () => {
+    const document = await prisma.document.create({
+      data: {
+        title: 'Draft before import',
+        content: JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'old draft' }] }] }),
+        ownerId,
+      },
+    });
+
+    const agent = request.agent(app);
+    await agent.post('/api/login').send({ email: 'owner@test.com' });
+
+    const response = await agent
+      .post('/api/import')
+      .field('documentId', document.id)
+      .attach('file', Buffer.from('Imported text', 'utf-8'), {
+        filename: 'notes.txt',
+        contentType: 'text/plain',
+      });
+
+    expect(response.status).toBe(200);
+    const updated = await prisma.document.findUnique({ where: { id: document.id } });
+    expect(updated?.title).toBe('notes');
+    expect(updated?.content).toContain('Imported text');
   });
 });

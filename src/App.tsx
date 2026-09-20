@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { EditorContent, useEditor } from '@tiptap/react';
+import { Mark } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Heading from '@tiptap/extension-heading';
@@ -27,20 +28,45 @@ type Share = {
 };
 
 const API_BASE = '/api';
+const fontSizes = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '22', '24', '28', '36', '48', '72'];
+
+const FontSize = Mark.create({
+  name: 'fontSize',
+  addAttributes() {
+    return {
+      fontSize: {
+        default: null,
+        parseHTML: (element) => element.style.fontSize || null,
+        renderHTML: (attributes) => attributes.fontSize ? { style: `font-size: ${attributes.fontSize}` } : {},
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'span[style*="font-size"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', HTMLAttributes, 0];
+  },
+});
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
-    credentials: 'include',
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers ?? {}),
+      },
+      credentials: 'include',
+    });
+  } catch {
+    throw new Error('Unable to reach the API. Start the backend with npm run dev:server.');
+  }
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? 'Request failed');
+    throw new Error(data.error ?? `Request failed (${res.status}).`);
   }
 
   return res.json() as Promise<T>;
@@ -177,6 +203,21 @@ function Dashboard({ user }: { user: User }) {
     }
   };
 
+  const renameDocument = async (docId: string, currentTitle: string) => {
+    const nextTitle = window.prompt('Rename document', currentTitle || 'Untitled document');
+    if (!nextTitle || !nextTitle.trim()) return;
+
+    try {
+      await request(`/documents/${docId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: nextTitle.trim() }),
+      });
+      await loadDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to rename document');
+    }
+  };
+
   const importFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -214,11 +255,12 @@ function Dashboard({ user }: { user: User }) {
           <button className="button" onClick={createDocument}>New Document</button>
           <label className="button button-secondary upload-button">
             Import File
-            <input type="file" accept=".txt,.md" onChange={importFile} />
+            <input type="file" accept=".txt,.md,.docx" onChange={importFile} />
           </label>
         </div>
       </div>
 
+      <div className="import-help">Supported formats: .txt, .md, .docx</div>
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="search-box">
@@ -232,7 +274,12 @@ function Dashboard({ user }: { user: User }) {
             {owned.length === 0 ? <div className="empty-state">Create your first document</div> : (
               <div className="document-list">
                 {allDocuments.filter((doc) => doc.ownerId === user.id || !shared.some((shareDoc) => shareDoc.id === doc.id)).map((doc) => (
-                  <DocumentCard key={doc.id} document={doc} onOpen={() => navigate(`/documents/${doc.id}`)} />
+                  <DocumentCard
+                    key={doc.id}
+                    document={doc}
+                    onOpen={() => navigate(`/documents/${doc.id}`)}
+                    onRename={() => renameDocument(doc.id, doc.title)}
+                  />
                 ))}
               </div>
             )}
@@ -243,7 +290,12 @@ function Dashboard({ user }: { user: User }) {
             {shared.length === 0 ? <div className="empty-state">No shared documents</div> : (
               <div className="document-list">
                 {shared.filter((doc) => doc.title.toLowerCase().includes(search.toLowerCase()) || !search.trim()).map((doc) => (
-                  <DocumentCard key={doc.id} document={doc} onOpen={() => navigate(`/documents/${doc.id}`)} />
+                  <DocumentCard
+                    key={doc.id}
+                    document={doc}
+                    onOpen={() => navigate(`/documents/${doc.id}`)}
+                    onRename={() => renameDocument(doc.id, doc.title)}
+                  />
                 ))}
               </div>
             )}
@@ -254,17 +306,23 @@ function Dashboard({ user }: { user: User }) {
   );
 }
 
-function DocumentCard({ document, onOpen }: { document: DocumentItem; onOpen: () => void }) {
+function DocumentCard({ document, onOpen, onRename }: { document: DocumentItem; onOpen: () => void; onRename: () => void }) {
   return (
-    <button className="document-card" onClick={onOpen}>
-      <div className="document-card-top">
-        <strong>{document.title}</strong>
-        <span>{document.access ?? 'owner'}</span>
+    <div className="document-card">
+      <button className="document-card-main" onClick={onOpen}>
+        <div className="document-card-top">
+          <strong>{document.title}</strong>
+          <span className="chip">{document.access ?? 'owner'}</span>
+        </div>
+        <small>{new Date(document.updatedAt).toLocaleString()}</small>
+        <div className="document-meta">Owner: {document.owner?.name ?? 'You'}</div>
+        <div className="document-meta">Access: {document.access ?? 'owner'}</div>
+      </button>
+      <div className="document-actions">
+        <button className="mini-button" onClick={onRename}>✎ Rename</button>
+        <button className="mini-button secondary" onClick={onOpen}>Open</button>
       </div>
-      <small>{new Date(document.updatedAt).toLocaleString()}</small>
-      <div className="document-meta">Owner: {document.owner?.name ?? 'You'}</div>
-      <div className="document-meta">Access: {document.access ?? 'owner'}</div>
-    </button>
+    </div>
   );
 }
 
@@ -278,9 +336,76 @@ function DocumentEditor({ user }: { user: User }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [permission, setPermission] = useState<Permission>('owner');
   const [shares, setShares] = useState<Share[]>([]);
+  const [fontSize, setFontSize] = useState('16');
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summary, setSummary] = useState<string[]>([]);
+
+  const importCurrentFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !id) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentId', id);
+
+    try {
+      const result = await fetch(`${API_BASE}/import`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      const data = await result.json().catch(() => ({}));
+      if (!result.ok) throw new Error(data.error ?? 'Import failed');
+      setDocument({
+        ...(document ?? {} as DocumentItem),
+        title: data.title ?? (document?.title ?? 'Imported document'),
+        content: data.content ?? (document?.content ?? { type: 'doc', content: [{ type: 'paragraph' }] }),
+        updatedAt: data.updatedAt ?? new Date().toISOString(),
+      });
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const summarizeDocument = async () => {
+    if (!id) return;
+    try {
+      setSummaryLoading(true);
+      setSummaryOpen(true);
+      setError('');
+      const data = await request<{ bullets: string[] }>(`/documents/${id}/summarize`, { method: 'POST' });
+      setSummary(data.bullets);
+    } catch (err) {
+      setSummaryOpen(false);
+      setError(err instanceof Error ? err.message : 'Unable to summarize document');
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const saveDocument = async () => {
+    if (!id || !document || !editor || permission === 'viewer') return;
+
+    try {
+      setSaveState('saving');
+      await request(`/documents/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: document.title, content: editor.getJSON() }),
+      });
+      setSaveState('saved');
+      setError('');
+    } catch (err) {
+      setSaveState('failed');
+      setError(err instanceof Error ? err.message : 'Unable to save document');
+    }
+  };
 
   const editor = useEditor({
-    extensions: [StarterKit, Underline, Heading.configure({ levels: [1, 2, 3] })],
+    extensions: [StarterKit, Underline, Heading.configure({ levels: [1, 2, 3] }), FontSize],
     content: document?.content ?? { type: 'doc', content: [{ type: 'paragraph' }] },
     editable: permission !== 'viewer',
     onUpdate: ({ editor }) => {
@@ -352,23 +477,45 @@ function DocumentEditor({ user }: { user: User }) {
           aria-label="Document title"
         />
         <div className="save-state">{saveState === 'saving' ? 'Saving...' : saveState === 'failed' ? 'Save failed' : 'Saved'}</div>
+        <button className="button save-button" onClick={saveDocument} disabled={permission === 'viewer' || saveState === 'saving'}>Save</button>
+        <label className="button button-secondary upload-button compact">
+          Import into draft
+          <input type="file" accept=".txt,.md,.docx" onChange={importCurrentFile} />
+        </label>
+        <button className="button ai-button" onClick={summarizeDocument} disabled={summaryLoading}>Summarize with AI</button>
         {permission === 'owner' && <button className="button" onClick={() => setShareOpen(true)}>Share</button>}
       </div>
 
+      <div className="import-help">Supported formats: .txt, .md, .docx</div>
       {error && <div className="alert alert-error">{error}</div>}
       <div className="permission-banner">{permission === 'viewer' ? 'You have view access' : permission === 'editor' ? 'You have edit access' : 'Owner access'}</div>
 
       {editor && (
         <div className="editor-panel">
           <div className="toolbar">
-            <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo() || permission === 'viewer'}>Undo</button>
-            <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo() || permission === 'viewer'}>Redo</button>
-            <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} disabled={permission === 'viewer'}>Heading</button>
-            <button onClick={() => editor.chain().focus().toggleBold().run()} disabled={permission === 'viewer'}>Bold</button>
-            <button onClick={() => editor.chain().focus().toggleItalic().run()} disabled={permission === 'viewer'}>Italic</button>
-            <button onClick={() => editor.chain().focus().toggleUnderline().run()} disabled={permission === 'viewer'}>Underline</button>
-            <button onClick={() => editor.chain().focus().toggleBulletList().run()} disabled={permission === 'viewer'}>Bullet List</button>
-            <button onClick={() => editor.chain().focus().toggleOrderedList().run()} disabled={permission === 'viewer'}>Numbered List</button>
+            <button className="tool-button" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo() || permission === 'viewer'}>Undo</button>
+            <button className="tool-button" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo() || permission === 'viewer'}>Redo</button>
+            <button className="tool-button heading-tool" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} disabled={permission === 'viewer'}>Heading</button>
+            <label className="font-size-control">
+              <span>Size</span>
+              <select
+                value={fontSize}
+                onChange={(event) => {
+                  const nextSize = event.target.value;
+                  setFontSize(nextSize);
+                  editor.chain().focus().setMark('fontSize', { fontSize: `${nextSize}px` }).run();
+                }}
+                disabled={permission === 'viewer'}
+                aria-label="Text size"
+              >
+                {fontSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+            <button className="tool-button" onClick={() => editor.chain().focus().toggleBold().run()} disabled={permission === 'viewer'}>Bold</button>
+            <button className="tool-button" onClick={() => editor.chain().focus().toggleItalic().run()} disabled={permission === 'viewer'}>Italic</button>
+            <button className="tool-button" onClick={() => editor.chain().focus().toggleUnderline().run()} disabled={permission === 'viewer'}>Underline</button>
+            <button className="tool-button" onClick={() => editor.chain().focus().toggleBulletList().run()} disabled={permission === 'viewer'}>Bullet list</button>
+            <button className="tool-button" onClick={() => editor.chain().focus().toggleOrderedList().run()} disabled={permission === 'viewer'}>Numbered list</button>
           </div>
           <EditorContent editor={editor} className="editor-content" />
         </div>
@@ -382,6 +529,25 @@ function DocumentEditor({ user }: { user: User }) {
           shares={shares}
           currentUser={user}
         />
+      )}
+
+      {summaryOpen && (
+        <div className="modal-backdrop" onClick={() => !summaryLoading && setSummaryOpen(false)}>
+          <div className="modal summary-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <span className="modal-eyebrow">AI ASSIST</span>
+                <h3>Document summary</h3>
+              </div>
+              <button className="button button-secondary" onClick={() => setSummaryOpen(false)} disabled={summaryLoading}>Close</button>
+            </div>
+            {summaryLoading ? <div className="summary-loading">Creating a concise summary...</div> : (
+              <ul className="summary-list">
+                {summary.map((bullet, index) => <li key={`${bullet}-${index}`}>{bullet}</li>)}
+              </ul>
+            )}
+          </div>
+        </div>
       )}
     </main>
   );
