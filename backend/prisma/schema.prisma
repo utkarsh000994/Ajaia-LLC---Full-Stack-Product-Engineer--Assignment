@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String          @id @default(cuid())
+  name      String
+  email     String          @unique
+  createdAt DateTime        @default(now())
+  documents Document[]
+  shares    DocumentShare[]
+}
+
+model Document {
+  id        String          @id @default(cuid())
+  title     String
+  content   String
+  ownerId   String
+  owner     User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  shares    DocumentShare[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([ownerId])
+}
+
+model DocumentShare {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, userId])
+  @@index([userId])
+  @@index([documentId])
+}

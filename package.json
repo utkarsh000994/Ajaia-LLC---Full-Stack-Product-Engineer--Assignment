@@ -1,0 +1,52 @@
+{
+  "name": "docflow",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch backend/src/server.ts",
+    "dev:client": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "seed": "tsx backend/src/seed.ts",
+    "db:generate": "prisma generate --schema backend/prisma/schema.prisma",
+    "db:push": "prisma db push --schema backend/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema backend/prisma/schema.prisma --name init"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@tiptap/extension-heading": "^2.11.7",
+    "@tiptap/extension-underline": "^2.11.7",
+    "@tiptap/react": "^2.11.7",
+    "@tiptap/starter-kit": "^2.11.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^1.4.5-lts.2",
+    "prisma": "^5.22.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.5",
+    "@types/express": "^5.0.0",
+    "@types/express-session": "^1.19.0",
+    "@types/multer": "^1.4.5",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "happy-dom": "^15.11.6",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  }
+}

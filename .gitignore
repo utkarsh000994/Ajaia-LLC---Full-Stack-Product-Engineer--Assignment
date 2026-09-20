@@ -1,0 +1,8 @@
+node_modules
+.vite
+.env
+.env.local
+dist
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+coverage
