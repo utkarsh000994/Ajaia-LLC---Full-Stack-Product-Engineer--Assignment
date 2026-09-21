@@ -4,6 +4,7 @@ https://drive.google.com/drive/folders/19juxC8n7aZdBit9j7Jp58gAxRz-NLS3E
 ## DOC Link
 https://drive.google.com/drive/folders/1fbwLmAXw8ZPwwaWh0GczM1GWDza1qlQe
 
+# Note: To use the “Summarize with AI” functionality, add your Gemini API key to the .env file. Once the API key is configured correctly, you will be able to use the AI summarization feature.
 # DocFlow
 
 ## Overview
