@@ -1,3 +1,9 @@
+## Video LINK
+https://drive.google.com/drive/folders/19juxC8n7aZdBit9j7Jp58gAxRz-NLS3E
+
+## DOC Link
+https://drive.google.com/drive/folders/1fbwLmAXw8ZPwwaWh0GczM1GWDza1qlQe
+
 # DocFlow
 
 ## Overview
